@@ -420,6 +420,52 @@ func TestCreateOrder(t *testing.T) {
 				require.NoError(t, err)
 			},
 		},
+		{
+			name: "failed to rollback transaction",
+			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
+				mock.ExpectBegin()
+				mock.ExpectExec("INSERT INTO orders (payment_method, tax_price, shipping_price, total_price) VALUES (?, ?, ?, ?)").
+					WillReturnError(fmt.Errorf("failed to create order"))
+				mock.ExpectRollback().WillReturnError(fmt.Errorf("failed to rollback transaction"))
+
+				_, err := st.CreateOrder(context.Background(), o)
+				require.Error(t, err)
+
+				err = mock.ExpectationsWereMet()
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "failed to begin transaction",
+			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
+				mock.ExpectBegin().WillReturnError(fmt.Errorf("failed to begin transaction"))
+
+				_, err := st.CreateOrder(context.Background(), o)
+				require.Error(t, err)
+
+				err = mock.ExpectationsWereMet()
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "failed to commit transaction",
+			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
+				mock.ExpectBegin()
+				mock.ExpectExec("INSERT INTO orders (payment_method, tax_price, shipping_price, total_price) VALUES (?, ?, ?, ?)").
+					WillReturnResult(sqlmock.NewResult(1, 1))
+				mock.ExpectExec("INSERT INTO order_items (name, quantity, image, price, product_id, order_id) VALUES (?, ?, ?, ?, ?, ?)").
+					WillReturnResult(sqlmock.NewResult(1, 1))
+				mock.ExpectExec("INSERT INTO order_items (name, quantity, image, price, product_id, order_id) VALUES (?, ?, ?, ?, ?, ?)").
+					WillReturnResult(sqlmock.NewResult(2, 1))
+				mock.ExpectCommit().WillReturnError(fmt.Errorf("failed to commit transaction"))
+
+				_, err := st.CreateOrder(context.Background(), o)
+				require.Error(t, err)
+
+				err = mock.ExpectationsWereMet()
+				require.NoError(t, err)
+			},
+		},
 	}
 
 	for _, tc := range tcs {
@@ -677,6 +723,50 @@ func TestDeleteOrder(t *testing.T) {
 				mock.ExpectExec("DELETE FROM orders WHERE id = ?").
 					WillReturnError(fmt.Errorf("failed to delete order"))
 				mock.ExpectRollback()
+
+				err := ps.DeleteOrder(context.Background(), 1)
+				require.Error(t, err)
+
+				err = mock.ExpectationsWereMet()
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "failed to begin transaction",
+			test: func(ps *PostgresStorer, mock sqlmock.Sqlmock) {
+				mock.ExpectBegin().WillReturnError(fmt.Errorf("failed to begin transaction"))
+
+				err := ps.DeleteOrder(context.Background(), 1)
+				require.Error(t, err)
+
+				err = mock.ExpectationsWereMet()
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "failed to rollback transaction",
+			test: func(ps *PostgresStorer, mock sqlmock.Sqlmock) {
+				mock.ExpectBegin()
+				mock.ExpectExec("DELETE FROM order_items WHERE order_id = ?").
+					WillReturnError(fmt.Errorf("failed to delete order items"))
+				mock.ExpectRollback().WillReturnError(fmt.Errorf("failed to rollback transaction"))
+
+				err := ps.DeleteOrder(context.Background(), 1)
+				require.Error(t, err)
+
+				err = mock.ExpectationsWereMet()
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "failed to commit transaction",
+			test: func(ps *PostgresStorer, mock sqlmock.Sqlmock) {
+				mock.ExpectBegin()
+				mock.ExpectExec("DELETE FROM order_items WHERE order_id = ?").
+					WillReturnResult(sqlmock.NewResult(1, 1))
+				mock.ExpectExec("DELETE FROM orders WHERE id = ?").
+					WillReturnResult(sqlmock.NewResult(1, 1))
+				mock.ExpectCommit().WillReturnError(fmt.Errorf("failed to commit transaction"))
 
 				err := ps.DeleteOrder(context.Background(), 1)
 				require.Error(t, err)
