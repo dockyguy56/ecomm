@@ -3,8 +3,8 @@ package main
 import (
 	"log"
 
-	"github.com/dockyguy56/ecomm/internal/adapters/postgresql/env"
 	db "github.com/dockyguy56/ecomm/internal/adapters/postgresql/sqlx"
+	"github.com/dockyguy56/ecomm/internal/env"
 )
 
 func main() {
