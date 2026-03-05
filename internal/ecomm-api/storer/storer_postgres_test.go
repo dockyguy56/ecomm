@@ -41,7 +41,16 @@ func TestCreateProduct(t *testing.T) {
 		{
 			name: "success",
 			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
-				mock.ExpectExec("INSERT INTO products (name, image, category, description, rating, num_reviews, price, count_in_stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").WithArgs(p.Name, p.Image, p.Category, p.Description, p.Rating, p.NumReviews, p.Price, p.CountInStock).WillReturnResult(sqlmock.NewResult(1, 1))
+				mock.ExpectExec("INSERT INTO products (name, image, category, description, rating, num_reviews, price, count_in_stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").
+					WithArgs(p.Name, p.Image, p.Category, p.Description, p.Rating, p.NumReviews, p.Price, p.CountInStock).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+
+				rows := sqlmock.NewRows([]string{"id"}).
+					AddRow(1)
+
+				mock.ExpectQuery("SELECT id FROM products WHERE name=$1 AND image=$2 AND category=$3 AND description=$4 AND rating=$5 AND num_reviews=$6 AND price=$7 AND count_in_stock=$8").
+					WillReturnRows(rows)
+
 				cp, err := st.CreateProduct(context.Background(), p)
 				require.NoError(t, err)
 				require.Equal(t, int64(1), cp.ID)
@@ -52,7 +61,10 @@ func TestCreateProduct(t *testing.T) {
 		{
 			name: "insert error",
 			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
-				mock.ExpectExec("INSERT INTO products (name, image, category, description, rating, num_reviews, price, count_in_stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").WithArgs(p.Name, p.Image, p.Category, p.Description, p.Rating, p.NumReviews, p.Price, p.CountInStock).WillReturnError(fmt.Errorf("insert error"))
+				mock.ExpectExec("INSERT INTO products (name, image, category, description, rating, num_reviews, price, count_in_stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").
+					WithArgs(p.Name, p.Image, p.Category, p.Description, p.Rating, p.NumReviews, p.Price, p.CountInStock).
+					WillReturnError(fmt.Errorf("insert error"))
+
 				_, err := st.CreateProduct(context.Background(), p)
 				require.Error(t, err)
 				err = mock.ExpectationsWereMet()
@@ -60,9 +72,15 @@ func TestCreateProduct(t *testing.T) {
 			},
 		},
 		{
-			name: "last insert ID error",
+			name: "retrieve id error",
 			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
-				mock.ExpectExec("INSERT INTO products (name, image, category, description, rating, num_reviews, price, count_in_stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").WithArgs(p.Name, p.Image, p.Category, p.Description, p.Rating, p.NumReviews, p.Price, p.CountInStock).WillReturnResult(sqlmock.NewErrorResult(fmt.Errorf("last insert ID error")))
+				mock.ExpectExec("INSERT INTO products (name, image, category, description, rating, num_reviews, price, count_in_stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").
+					WithArgs(p.Name, p.Image, p.Category, p.Description, p.Rating, p.NumReviews, p.Price, p.CountInStock).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+
+				mock.ExpectQuery("SELECT id FROM products WHERE name=$1 AND image=$2 AND category=$3 AND description=$4 AND rating=$5 AND num_reviews=$6 AND price=$7 AND count_in_stock=$8").
+					WillReturnError(fmt.Errorf("failed to retrieve created product"))
+
 				_, err := st.CreateProduct(context.Background(), p)
 				require.Error(t, err)
 				err = mock.ExpectationsWereMet()
@@ -121,7 +139,10 @@ func TestGetProductByID(t *testing.T) {
 		{
 			name: "failed getting product",
 			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
-				mock.ExpectQuery("SELECT * FROM products WHERE id=$1").WithArgs(1).WillReturnError(fmt.Errorf("failed to get product"))
+				mock.ExpectQuery("SELECT * FROM products WHERE id=$1").
+					WithArgs(1).
+					WillReturnError(fmt.Errorf("failed to get product"))
+
 				_, err := st.GetProductByID(context.Background(), 1)
 				require.Error(t, err)
 				err = mock.ExpectationsWereMet()
@@ -230,12 +251,20 @@ func TestUpdateProduct(t *testing.T) {
 				mock.ExpectExec("INSERT INTO products (name, image, category, description, rating, num_reviews, price, count_in_stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").
 					WithArgs(p.Name, p.Image, p.Category, p.Description, p.Rating, p.NumReviews, p.Price, p.CountInStock).
 					WillReturnResult(sqlmock.NewResult(1, 1))
+
+				rows := sqlmock.NewRows([]string{"id"}).
+					AddRow(1)
+
+				mock.ExpectQuery("SELECT id FROM products WHERE name=$1 AND image=$2 AND category=$3 AND description=$4 AND rating=$5 AND num_reviews=$6 AND price=$7 AND count_in_stock=$8").
+					WillReturnRows(rows)
+
 				cp, err := st.CreateProduct(context.Background(), p)
 				require.NoError(t, err)
 				require.Equal(t, int64(1), cp.ID)
 
-				mock.ExpectExec("UPDATE products SET name=?, image=?, category=?, description=?, rating=?, num_reviews=?, price=?, count_in_stock=? WHERE id=?").
+				mock.ExpectExec("UPDATE products SET name=?, image=?, category=?, description=?, rating=?, num_reviews=?, price=?, count_in_stock=?, updated_at=? WHERE id=?").
 					WillReturnResult(sqlmock.NewResult(1, 1))
+
 				np, err := st.UpdateProduct(context.Background(), up)
 				require.NoError(t, err)
 				require.Equal(t, up.Name, np.Name)
@@ -254,7 +283,7 @@ func TestUpdateProduct(t *testing.T) {
 		{
 			name: "failed updating product",
 			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
-				mock.ExpectExec("UPDATE products SET name=?, image=?, category=?, description=?, rating=?, num_reviews=?, price=?, count_in_stock=? WHERE id=?").
+				mock.ExpectExec("UPDATE products SET name=?, image=?, category=?, description=?, rating=?, num_reviews=?, price=?, count_in_stock=?, updated_at=? WHERE id=?").
 					WillReturnError(fmt.Errorf("error updating product"))
 				_, err := st.UpdateProduct(context.Background(), p)
 				require.Error(t, err)
@@ -307,7 +336,7 @@ func TestDeleteProduct(t *testing.T) {
 }
 
 func TestCreateOrder(t *testing.T) {
-	ois := []*OrderItem{
+	ois := []OrderItem{
 		{
 			Name:      "test product",
 			Quantity:  1,
@@ -342,8 +371,14 @@ func TestCreateOrder(t *testing.T) {
 				mock.ExpectBegin()
 				mock.ExpectExec("INSERT INTO orders (payment_method, tax_price, shipping_price, total_price) VALUES (?, ?, ?, ?)").
 					WillReturnResult(sqlmock.NewResult(1, 1))
+				rows := sqlmock.NewRows([]string{"id"}).
+					AddRow(1)
+				mock.ExpectQuery("SELECT id FROM orders WHERE payment_method=$1 AND tax_price=$2 AND shipping_price=$3 AND total_price=$4").
+					WillReturnRows(rows)
 				mock.ExpectExec("INSERT INTO order_items (name, quantity, image, price, product_id, order_id) VALUES (?, ?, ?, ?, ?, ?)").
 					WillReturnResult(sqlmock.NewResult(1, 1))
+				mock.ExpectQuery("SELECT id FROM order_items WHERE order_id=$1 AND product_id=$2 AND name=$3 AND quantity=$4 AND image=$5 AND price=$6").
+					WillReturnRows(rows)
 				mock.ExpectExec("INSERT INTO order_items (name, quantity, image, price, product_id, order_id) VALUES (?, ?, ?, ?, ?, ?)").
 					WillReturnResult(sqlmock.NewResult(2, 1))
 				mock.ExpectCommit()
@@ -372,11 +407,13 @@ func TestCreateOrder(t *testing.T) {
 			},
 		},
 		{
-			name: "last craete order ID error",
+			name: "failed to retrieve last created order id",
 			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
 				mock.ExpectBegin()
 				mock.ExpectExec("INSERT INTO orders (payment_method, tax_price, shipping_price, total_price) VALUES (?, ?, ?, ?)").
-					WillReturnResult(sqlmock.NewErrorResult(fmt.Errorf("last insert ID error")))
+					WillReturnResult(sqlmock.NewResult(1, 1))
+				mock.ExpectQuery("SELECT id FROM orders WHERE payment_method=$1 AND tax_price=$2 AND shipping_price=$3 AND total_price=$4").
+					WillReturnError(fmt.Errorf("failed to retrieve created order"))
 				mock.ExpectRollback()
 
 				_, err := st.CreateOrder(context.Background(), o)
@@ -392,6 +429,10 @@ func TestCreateOrder(t *testing.T) {
 				mock.ExpectBegin()
 				mock.ExpectExec("INSERT INTO orders (payment_method, tax_price, shipping_price, total_price) VALUES (?, ?, ?, ?)").
 					WillReturnResult(sqlmock.NewResult(1, 1))
+				rows := sqlmock.NewRows([]string{"id"}).
+					AddRow(1)
+				mock.ExpectQuery("SELECT id FROM orders WHERE payment_method=$1 AND tax_price=$2 AND shipping_price=$3 AND total_price=$4").
+					WillReturnRows(rows)
 				mock.ExpectExec("INSERT INTO order_items (name, quantity, image, price, product_id, order_id) VALUES (?, ?, ?, ?, ?, ?)").
 					WillReturnError(fmt.Errorf("failed to create order item"))
 				mock.ExpectRollback()
@@ -409,8 +450,14 @@ func TestCreateOrder(t *testing.T) {
 				mock.ExpectBegin()
 				mock.ExpectExec("INSERT INTO orders (payment_method, tax_price, shipping_price, total_price) VALUES (?, ?, ?, ?)").
 					WillReturnResult(sqlmock.NewResult(1, 1))
+				rows := sqlmock.NewRows([]string{"id"}).
+					AddRow(1)
+				mock.ExpectQuery("SELECT id FROM orders WHERE payment_method=$1 AND tax_price=$2 AND shipping_price=$3 AND total_price=$4").
+					WillReturnRows(rows)
 				mock.ExpectExec("INSERT INTO order_items (name, quantity, image, price, product_id, order_id) VALUES (?, ?, ?, ?, ?, ?)").
-					WillReturnResult(sqlmock.NewErrorResult(fmt.Errorf("last insert ID error")))
+					WillReturnResult(sqlmock.NewResult(1, 1))
+				mock.ExpectQuery("SELECT id FROM order_items WHERE order_id=$1 AND product_id=$2 AND name=$3 AND quantity=$4 AND image=$5 AND price=$6").
+					WillReturnError(fmt.Errorf("failed to retrieve created order items"))
 				mock.ExpectRollback()
 
 				_, err := st.CreateOrder(context.Background(), o)
@@ -453,8 +500,14 @@ func TestCreateOrder(t *testing.T) {
 				mock.ExpectBegin()
 				mock.ExpectExec("INSERT INTO orders (payment_method, tax_price, shipping_price, total_price) VALUES (?, ?, ?, ?)").
 					WillReturnResult(sqlmock.NewResult(1, 1))
+				rows := sqlmock.NewRows([]string{"id"}).
+					AddRow(1)
+				mock.ExpectQuery("SELECT id FROM orders WHERE payment_method=$1 AND tax_price=$2 AND shipping_price=$3 AND total_price=$4").
+					WillReturnRows(rows)
 				mock.ExpectExec("INSERT INTO order_items (name, quantity, image, price, product_id, order_id) VALUES (?, ?, ?, ?, ?, ?)").
 					WillReturnResult(sqlmock.NewResult(1, 1))
+				mock.ExpectQuery("SELECT id FROM order_items WHERE order_id=$1 AND product_id=$2 AND name=$3 AND quantity=$4 AND image=$5 AND price=$6").
+					WillReturnRows(rows)
 				mock.ExpectExec("INSERT INTO order_items (name, quantity, image, price, product_id, order_id) VALUES (?, ?, ?, ?, ?, ?)").
 					WillReturnResult(sqlmock.NewResult(2, 1))
 				mock.ExpectCommit().WillReturnError(fmt.Errorf("failed to commit transaction"))
@@ -476,7 +529,7 @@ func TestCreateOrder(t *testing.T) {
 }
 
 func TestGetOrderByID(t *testing.T) {
-	ois := []*OrderItem{
+	ois := []OrderItem{
 		{
 			Name:      "test product",
 			Quantity:  1,
@@ -510,14 +563,14 @@ func TestGetOrderByID(t *testing.T) {
 			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
 				orderRows := sqlmock.NewRows([]string{"id", "payment_method", "tax_price", "shipping_price", "total_price", "created_at", "updated_at"}).
 					AddRow(1, o.PaymentMethod, o.TaxPrice, o.ShippingPrice, o.TotalPrice, o.CreatedAt, o.UpdatedAt)
-				mock.ExpectQuery("SELECT * FROM orders WHERE id = ?").
+				mock.ExpectQuery("SELECT * FROM orders WHERE id=$1").
 					WithArgs(1).
 					WillReturnRows(orderRows)
 
 				orderItemRows := sqlmock.NewRows([]string{"id", "name", "quantity", "image", "price", "product_id", "order_id"}).
 					AddRow(1, ois[0].Name, ois[0].Quantity, ois[0].Image, ois[0].Price, ois[0].ProductID, 1).
 					AddRow(2, ois[1].Name, ois[1].Quantity, ois[1].Image, ois[1].Price, ois[1].ProductID, 1)
-				mock.ExpectQuery("SELECT * FROM order_items WHERE order_id = ?").
+				mock.ExpectQuery("SELECT * FROM order_items WHERE order_id=$1").
 					WithArgs(1).
 					WillReturnRows(orderItemRows)
 
@@ -540,7 +593,7 @@ func TestGetOrderByID(t *testing.T) {
 		{
 			name: "failed to retrieve order",
 			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
-				mock.ExpectQuery("SELECT * FROM orders WHERE id = ?").
+				mock.ExpectQuery("SELECT * FROM orders WHERE id=$1").
 					WillReturnError(fmt.Errorf("failed to retrieve order"))
 
 				_, err := st.GetOrderByID(context.Background(), 1)
@@ -555,10 +608,10 @@ func TestGetOrderByID(t *testing.T) {
 			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
 				orderRows := sqlmock.NewRows([]string{"id", "payment_method", "tax_price", "shipping_price", "total_price", "created_at", "updated_at"}).
 					AddRow(1, o.PaymentMethod, o.TaxPrice, o.ShippingPrice, o.TotalPrice, o.CreatedAt, o.UpdatedAt)
-				mock.ExpectQuery("SELECT * FROM orders WHERE id = ?").
+				mock.ExpectQuery("SELECT * FROM orders WHERE id=$1").
 					WillReturnRows(orderRows)
 
-				mock.ExpectQuery("SELECT * FROM order_items WHERE order_id = ?").
+				mock.ExpectQuery("SELECT * FROM order_items WHERE order_id=$1").
 					WillReturnError(fmt.Errorf("failed to retrieve order items"))
 
 				_, err := st.GetOrderByID(context.Background(), 1)
@@ -578,7 +631,7 @@ func TestGetOrderByID(t *testing.T) {
 }
 
 func TestGetAllOrders(t *testing.T) {
-	ois := []*OrderItem{
+	ois := []OrderItem{
 		{
 			Name:      "test product",
 			Quantity:  1,
@@ -618,7 +671,7 @@ func TestGetAllOrders(t *testing.T) {
 				orderItemRows := sqlmock.NewRows([]string{"id", "name", "quantity", "image", "price", "product_id", "order_id"}).
 					AddRow(1, ois[0].Name, ois[0].Quantity, ois[0].Image, ois[0].Price, ois[0].ProductID, 1).
 					AddRow(2, ois[1].Name, ois[1].Quantity, ois[1].Image, ois[1].Price, ois[1].ProductID, 1)
-				mock.ExpectQuery("SELECT * FROM order_items WHERE order_id = ?").
+				mock.ExpectQuery("SELECT * FROM order_items WHERE order_id=$1").
 					WillReturnRows(orderItemRows)
 
 				mo, err := ps.GetAllOrders(context.Background())
@@ -658,7 +711,7 @@ func TestGetAllOrders(t *testing.T) {
 					AddRow(1, o.PaymentMethod, o.TaxPrice, o.ShippingPrice, o.TotalPrice, o.CreatedAt, o.UpdatedAt)
 				mock.ExpectQuery("SELECT * FROM orders").
 					WillReturnRows(orderRows)
-				mock.ExpectQuery("SELECT * FROM order_items WHERE order_id = ?").
+				mock.ExpectQuery("SELECT * FROM order_items WHERE order_id=$1").
 					WillReturnError(fmt.Errorf("failed to retrieve order items"))
 
 				_, err := ps.GetAllOrders(context.Background())
@@ -686,9 +739,9 @@ func TestDeleteOrder(t *testing.T) {
 			name: "success",
 			test: func(ps *PostgresStorer, mock sqlmock.Sqlmock) {
 				mock.ExpectBegin()
-				mock.ExpectExec("DELETE FROM order_items WHERE order_id = ?").
+				mock.ExpectExec("DELETE FROM order_items WHERE order_id=$1").
 					WillReturnResult(sqlmock.NewResult(0, 1))
-				mock.ExpectExec("DELETE FROM orders WHERE id = ?").
+				mock.ExpectExec("DELETE FROM orders WHERE id=$1").
 					WillReturnResult(sqlmock.NewResult(0, 1))
 				mock.ExpectCommit()
 
@@ -703,7 +756,7 @@ func TestDeleteOrder(t *testing.T) {
 			name: "failed to delete order items",
 			test: func(ps *PostgresStorer, mock sqlmock.Sqlmock) {
 				mock.ExpectBegin()
-				mock.ExpectExec("DELETE FROM order_items WHERE order_id = ?").
+				mock.ExpectExec("DELETE FROM order_items WHERE order_id=$1").
 					WillReturnError(fmt.Errorf("failed to delete order items"))
 				mock.ExpectRollback()
 
@@ -718,9 +771,9 @@ func TestDeleteOrder(t *testing.T) {
 			name: "failed to delete order",
 			test: func(ps *PostgresStorer, mock sqlmock.Sqlmock) {
 				mock.ExpectBegin()
-				mock.ExpectExec("DELETE FROM order_items WHERE order_id = ?").
+				mock.ExpectExec("DELETE FROM order_items WHERE order_id=$1").
 					WillReturnResult(sqlmock.NewResult(1, 1))
-				mock.ExpectExec("DELETE FROM orders WHERE id = ?").
+				mock.ExpectExec("DELETE FROM orders WHERE id=$1").
 					WillReturnError(fmt.Errorf("failed to delete order"))
 				mock.ExpectRollback()
 
@@ -747,7 +800,7 @@ func TestDeleteOrder(t *testing.T) {
 			name: "failed to rollback transaction",
 			test: func(ps *PostgresStorer, mock sqlmock.Sqlmock) {
 				mock.ExpectBegin()
-				mock.ExpectExec("DELETE FROM order_items WHERE order_id = ?").
+				mock.ExpectExec("DELETE FROM order_items WHERE order_id=$1").
 					WillReturnError(fmt.Errorf("failed to delete order items"))
 				mock.ExpectRollback().WillReturnError(fmt.Errorf("failed to rollback transaction"))
 
@@ -762,9 +815,9 @@ func TestDeleteOrder(t *testing.T) {
 			name: "failed to commit transaction",
 			test: func(ps *PostgresStorer, mock sqlmock.Sqlmock) {
 				mock.ExpectBegin()
-				mock.ExpectExec("DELETE FROM order_items WHERE order_id = ?").
+				mock.ExpectExec("DELETE FROM order_items WHERE order_id=$1").
 					WillReturnResult(sqlmock.NewResult(1, 1))
-				mock.ExpectExec("DELETE FROM orders WHERE id = ?").
+				mock.ExpectExec("DELETE FROM orders WHERE id=$1").
 					WillReturnResult(sqlmock.NewResult(1, 1))
 				mock.ExpectCommit().WillReturnError(fmt.Errorf("failed to commit transaction"))
 

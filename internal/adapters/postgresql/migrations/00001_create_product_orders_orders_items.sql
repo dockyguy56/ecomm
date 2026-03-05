@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS products (
-  id int PRIMARY KEY NOT NULL,
+  id int PRIMARY KEY NOT NULL GENERATED ALWAYS AS IDENTITY,
   name varchar(255) NOT NULL,
   image varchar(255) NOT NULL,
   category varchar(255) NOT NULL,
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS products (
 );
 
 CREATE TABLE IF NOT EXISTS orders (
-  id int PRIMARY KEY NOT NULL,
+  id int PRIMARY KEY NOT NULL GENERATED ALWAYS AS IDENTITY,
   payment_method varchar(255) NOT NULL,
   tax_price decimal(10,2) NOT NULL,
   shipping_price decimal(10,2) NOT NULL,
@@ -25,13 +25,13 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 
 CREATE TABLE IF NOT EXISTS order_items (
-  id int PRIMARY KEY NOT NULL,
+  id int PRIMARY KEY NOT NULL GENERATED ALWAYS AS IDENTITY,
   order_id int NOT NULL,
   product_id int NOT NULL,
   name varchar(255) NOT NULL,
   quantity int NOT NULL,
   image varchar(255) NOT NULL,
-  price int NOT NULL
+  price decimal(10,2) NOT NULL
 );
 
 ALTER TABLE order_items ADD FOREIGN KEY (order_id) REFERENCES orders (id);

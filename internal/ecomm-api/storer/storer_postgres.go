@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq" // needed for postgres driver "go get github.com/lib/pq@latest"
 )
 
 type PostgresStorer struct {
@@ -19,18 +20,21 @@ func (ps *PostgresStorer) CreateProduct(ctx context.Context, product *Product) (
 	// Implement the logic to insert a new product into the database
 	// and return the created product with its ID.
 
-	res, err := ps.db.NamedExec("INSERT INTO products (name, image, category, description, rating, num_reviews, price, count_in_stock) VALUES (:name, :image, :category, :description, :rating, :num_reviews, :price, :count_in_stock)", product)
+	_, err := ps.db.NamedExecContext(ctx, "INSERT INTO products (name, image, category, description, rating, num_reviews, price, count_in_stock) VALUES (:name, :image, :category, :description, :rating, :num_reviews, :price, :count_in_stock)", product)
 	if err != nil {
 		return nil, fmt.Errorf("error inserting product: %w", err)
 	}
 
 	// Get the ID of the newly created product
-	productID, err := res.LastInsertId()
+	var id int
+
+	err = ps.db.GetContext(ctx, &id, "SELECT id FROM products WHERE name=$1 AND image=$2 AND category=$3 AND description=$4 AND rating=$5 AND num_reviews=$6 AND price=$7 AND count_in_stock=$8", product.Name, product.Image, product.Category, product.Description, product.Rating, product.NumReviews, product.Price, product.CountInStock)
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve last insert ID: %w", err)
+		return nil, fmt.Errorf("failed to retrieve created product: %w", err)
 	}
 
-	product.ID = productID
+	product.ID = int64(id)
+
 	return product, nil
 }
 
@@ -46,9 +50,9 @@ func (ps *PostgresStorer) GetProductByID(ctx context.Context, id int64) (*Produc
 	return &product, nil
 }
 
-func (ps *PostgresStorer) GetAllProducts(ctx context.Context) ([]*Product, error) {
+func (ps *PostgresStorer) GetAllProducts(ctx context.Context) ([]Product, error) {
 	// Implement the logic to retrieve all products from the database.
-	var products []*Product
+	var products []Product
 
 	err := ps.db.SelectContext(ctx, &products, "SELECT * FROM products")
 	if err != nil {
@@ -61,7 +65,7 @@ func (ps *PostgresStorer) GetAllProducts(ctx context.Context) ([]*Product, error
 func (ps *PostgresStorer) UpdateProduct(ctx context.Context, product *Product) (*Product, error) {
 	// Implement the logic to update an existing product in the database
 	// and return the updated product.
-	_, err := ps.db.NamedExec("UPDATE products SET name=:name, image=:image, category=:category, description=:description, rating=:rating, num_reviews=:num_reviews, price=:price, count_in_stock=:count_in_stock WHERE id=:id", product)
+	_, err := ps.db.NamedExec("UPDATE products SET name=:name, image=:image, category=:category, description=:description, rating=:rating, num_reviews=:num_reviews, price=:price, count_in_stock=:count_in_stock, updated_at=:updated_at WHERE id=:id", product)
 	if err != nil {
 		return nil, fmt.Errorf("error updating product: %w", err)
 	}
@@ -90,7 +94,7 @@ func (ps *PostgresStorer) CreateOrder(ctx context.Context, order *Order) (*Order
 
 		for _, oi := range order.Items {
 			oi.OrderID = o.ID
-			err := createOrderItems(ctx, tx, *oi)
+			err := createOrderItems(ctx, tx, &oi)
 			if err != nil {
 				return fmt.Errorf("failed to create order item: %w", err)
 			}
@@ -107,31 +111,31 @@ func (ps *PostgresStorer) CreateOrder(ctx context.Context, order *Order) (*Order
 }
 
 func createOrder(ctx context.Context, tx *sqlx.Tx, order *Order) (*Order, error) {
-	res, err := tx.NamedExecContext(ctx, "INSERT INTO orders (payment_method, tax_price, shipping_price, total_price) VALUES (:payment_method, :tax_price, :shipping_price, :total_price)", order)
+	_, err := tx.NamedExecContext(ctx, "INSERT INTO orders (payment_method, tax_price, shipping_price, total_price) VALUES (:payment_method, :tax_price, :shipping_price, :total_price)", order)
 	if err != nil {
 		return nil, fmt.Errorf("error inserting order: %w", err)
 	}
 
-	id, err := res.LastInsertId()
+	var id int
+
+	err = tx.GetContext(ctx, &id, "SELECT id FROM orders WHERE payment_method=$1 AND tax_price=$2 AND shipping_price=$3 AND total_price=$4", order.PaymentMethod, order.TaxPrice, order.ShippingPrice, order.TotalPrice)
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve last insert ID: %w", err)
+		return nil, fmt.Errorf("failed to retrieve created order: %w", err)
 	}
 
-	order.ID = id
+	order.ID = int64(id)
 	return order, nil
 }
 
-func createOrderItems(ctx context.Context, tx *sqlx.Tx, orderItem OrderItem) error {
-	res, err := tx.NamedExecContext(ctx, "INSERT INTO order_items (name, quantity, image, price, product_id, order_id) VALUES (:name, :quantity, :image, :price, :product_id, :order_id)", orderItem)
+func createOrderItems(ctx context.Context, tx *sqlx.Tx, orderItem *OrderItem) error {
+	_, err := tx.NamedExecContext(ctx, "INSERT INTO order_items (name, quantity, image, price, product_id, order_id) VALUES (:name, :quantity, :image, :price, :product_id, :order_id)", orderItem)
 	if err != nil {
 		return fmt.Errorf("error inserting order item: %w", err)
 	}
 
-	id, err := res.LastInsertId()
-	if err != nil {
-		return fmt.Errorf("failed to retrieve last insert ID: %w", err)
-	}
-	orderItem.ID = id
+	var id int
+	err = tx.GetContext(ctx, &id, "SELECT id FROM order_items WHERE order_id=$1 AND product_id=$2 AND name=$3 AND quantity=$4 AND image=$5 AND price=$6", orderItem.OrderID, orderItem.ProductID, orderItem.Name, orderItem.Quantity, orderItem.Image, orderItem.Price)
+	orderItem.ID = int64(id)
 
 	return nil
 }
@@ -139,13 +143,13 @@ func createOrderItems(ctx context.Context, tx *sqlx.Tx, orderItem OrderItem) err
 func (ps *PostgresStorer) GetOrderByID(ctx context.Context, id int64) (*Order, error) {
 	// Implement the logic to retrieve an order by its ID from the database.
 	var order Order
-	err := ps.db.GetContext(ctx, &order, "SELECT * FROM orders WHERE id = ?", id)
+	err := ps.db.GetContext(ctx, &order, "SELECT * FROM orders WHERE id=$1", id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve order by ID: %w", err)
 	}
 
-	var orderItems []*OrderItem
-	err = ps.db.SelectContext(ctx, &orderItems, "SELECT * FROM order_items WHERE order_id = ?", id)
+	var orderItems []OrderItem
+	err = ps.db.SelectContext(ctx, &orderItems, "SELECT * FROM order_items WHERE order_id=$1", id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve order items: %w", err)
 	}
@@ -163,8 +167,8 @@ func (ps *PostgresStorer) GetAllOrders(ctx context.Context) ([]*Order, error) {
 	}
 
 	for _, order := range orders {
-		var orderItems []*OrderItem
-		err = ps.db.SelectContext(ctx, &orderItems, "SELECT * FROM order_items WHERE order_id = ?", order.ID)
+		var orderItems []OrderItem
+		err = ps.db.SelectContext(ctx, &orderItems, "SELECT * FROM order_items WHERE order_id=$1", order.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to retrieve order items for order %d: %w", order.ID, err)
 		}
@@ -178,12 +182,12 @@ func (ps *PostgresStorer) GetAllOrders(ctx context.Context) ([]*Order, error) {
 
 func (ps *PostgresStorer) DeleteOrder(ctx context.Context, id int64) error {
 	err := ps.execTx(ctx, func(tx *sqlx.Tx) error {
-		_, err := tx.ExecContext(ctx, "DELETE FROM order_items WHERE order_id = ?", id)
+		_, err := tx.ExecContext(ctx, "DELETE FROM order_items WHERE order_id=$1", id)
 		if err != nil {
 			return fmt.Errorf("error deleting order items: %w", err)
 		}
 
-		_, err = tx.ExecContext(ctx, "DELETE FROM orders WHERE id = ?", id)
+		_, err = tx.ExecContext(ctx, "DELETE FROM orders WHERE id=$1", id)
 		if err != nil {
 			return fmt.Errorf("error deleting order: %w", err)
 		}

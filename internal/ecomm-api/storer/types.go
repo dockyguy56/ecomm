@@ -24,7 +24,7 @@ type Order struct {
 	TotalPrice    float64    `db:"total_price"`
 	CreatedAt     time.Time  `db:"created_at"`
 	UpdatedAt     *time.Time `db:"updated_at"`
-	Items         []*OrderItem
+	Items         []OrderItem
 }
 
 type OrderItem struct {
