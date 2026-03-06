@@ -53,3 +53,43 @@ type OrderResponse struct {
 	CreatedAt     time.Time   `json:"created_at"`
 	UpdatedAt     *time.Time  `json:"updated_at,omitempty"`
 }
+
+type UserRequest struct {
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	IsAdmin  bool   `json:"is_admin"`
+}
+
+type UserResponse struct {
+	Name    string `json:"name"`
+	Email   string `json:"email"`
+	IsAdmin bool   `json:"is_admin"`
+}
+
+type ListUserRespose struct {
+	Users []UserResponse `json:"users"`
+}
+
+type LoginUserRequest struct {
+	Email    string `json:"email`
+	Password string `json:"password"`
+}
+
+type LoginUserResponse struct {
+	SessionID             string       `json:"session_id"`
+	AccessToken           string       `json:"access_token"`
+	RefreshToken          string       `json:"refresh_token"`
+	AccessTokenExpiresAt  time.Time    `json:"access_token_expires_at"`
+	RefreshTokenExpiresAt time.Time    `json:"refresh_toke_expires_at"`
+	User                  UserResponse `json:"user"`
+}
+
+type RenewAccesTokenRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+type RenewAccessTokenResponse struct {
+	AccessToken          string    `json:"access_token"`
+	AccessTokenExpiresAt time.Time `json:"access_token_expires_at"`
+}

@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 
-	// "github.com/jackc/pgx/v5"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq" // needed for postgres driver "go get github.com/lib/pq@latest"
 )

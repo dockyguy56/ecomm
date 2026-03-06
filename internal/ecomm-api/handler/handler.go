@@ -2,30 +2,37 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/dockyguy56/ecomm/internal/ecomm-api/json"
 	"github.com/dockyguy56/ecomm/internal/ecomm-api/server"
 	"github.com/dockyguy56/ecomm/internal/ecomm-api/storer"
+	"github.com/dockyguy56/ecomm/internal/token"
+	"github.com/dockyguy56/ecomm/internal/util"
 	"github.com/go-chi/chi"
 )
 
 type handler struct {
-	ctx    context.Context
-	server *server.Server
+	ctx        context.Context
+	server     *server.Server
+	tokenMaker *token.JWTMaker
 }
 
-func NewHandler(ctx context.Context, server *server.Server) *handler {
-	return &handler{ctx: ctx, server: server}
+func NewHandler(ctx context.Context, server *server.Server, secretKey string) *handler {
+	return &handler{
+		ctx:        ctx,
+		server:     server,
+		tokenMaker: token.NewJWTMaker(secretKey),
+	}
 }
 
 func (h *handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	var p ProductRequest
 
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+	if err := json.Read(r, &p); err != nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
 	}
@@ -38,9 +45,7 @@ func (h *handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 
 	response := toProductResponse(product)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(response)
+	json.Write(w, http.StatusCreated, response)
 }
 
 func (h *handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
@@ -59,9 +64,7 @@ func (h *handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 
 	response := toProductResponse(product)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	json.Write(w, http.StatusOK, response)
 }
 
 func (h *handler) GetAllProducts(w http.ResponseWriter, r *http.Request) {
@@ -76,9 +79,7 @@ func (h *handler) GetAllProducts(w http.ResponseWriter, r *http.Request) {
 		response[i] = toProductResponse(&product)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	json.Write(w, http.StatusOK, response)
 }
 
 func (h *handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +91,7 @@ func (h *handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var p ProductRequest
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+	if err := json.Read(r, &p); err != nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
 	}
@@ -110,9 +111,7 @@ func (h *handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 
 	response := toProductResponse(updated)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	json.Write(w, http.StatusOK, response)
 }
 
 func (h *handler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
@@ -203,7 +202,7 @@ func toTimePtr(t time.Time) *time.Time {
 func (h *handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	var req OrderRequest
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Read(r, &req); err != nil {
 		http.Error(w, fmt.Errorf("Invalid request payload: %w", err).Error(), http.StatusBadRequest)
 		return
 	}
@@ -217,9 +216,7 @@ func (h *handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 
 	response := toOrderResponse(created)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(response)
+	json.Write(w, http.StatusCreated, response)
 }
 
 func (h *handler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
@@ -238,9 +235,7 @@ func (h *handler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 
 	response := toOrderResponse(order)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	json.Write(w, http.StatusOK, response)
 }
 
 func (h *handler) GetAllOrders(w http.ResponseWriter, r *http.Request) {
@@ -255,9 +250,7 @@ func (h *handler) GetAllOrders(w http.ResponseWriter, r *http.Request) {
 		response = append(response, toOrderResponse(order))
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	json.Write(w, http.StatusOK, response)
 }
 
 func (h *handler) DeleteOrder(w http.ResponseWriter, r *http.Request) {
@@ -326,4 +319,258 @@ func toOrderItemsResponse(items []storer.OrderItem) []OrderItem {
 		})
 	}
 	return res
+}
+
+func (h *handler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	var u UserRequest
+	if err := json.Read(r, &u); err != nil {
+		http.Error(w, fmt.Errorf("Bad request: %w", err).Error(), http.StatusBadRequest)
+		return
+	}
+
+	// hash password
+	hashed, err := util.HassPassword(u.Password)
+	if err != nil {
+		http.Error(w, fmt.Errorf("error hasing password: %w", err).Error(), http.StatusInternalServerError)
+		return
+	}
+
+	u.Password = hashed
+
+	created, err := h.server.CreateUser(h.ctx, toStorerUser(u))
+	if err != nil {
+		http.Error(w, fmt.Errorf("error creating user : %w", err).Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response := toUserResponse(created)
+
+	json.Write(w, http.StatusCreated, response)
+}
+
+func toStorerUser(u UserRequest) *storer.User {
+	return &storer.User{
+		Name:     u.Name,
+		Email:    u.Email,
+		Password: u.Password,
+		IsAdmin:  u.IsAdmin,
+	}
+}
+
+func toUserResponse(u *storer.User) UserResponse {
+	return UserResponse{
+		Name:    u.Name,
+		Email:   u.Email,
+		IsAdmin: u.IsAdmin,
+	}
+}
+
+func (h *handler) GetAllUsers(w http.ResponseWriter, r *http.Request) {
+	users, err := h.server.GetAllUsers(h.ctx)
+	if err != nil {
+		http.Error(w, fmt.Errorf("error getting all users: %w", err).Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var response ListUserRespose
+	for _, u := range users {
+		response.Users = append(response.Users, toUserResponse(&u))
+	}
+
+	json.Write(w, http.StatusOK, response)
+}
+
+func (h *handler) updateUser(w http.ResponseWriter, r *http.Request) {
+	var u UserRequest
+	if err := json.Read(r, &u); err != nil {
+		http.Error(w, fmt.Errorf("error decoding request body on update: %w", err).Error(), http.StatusBadRequest)
+		return
+	}
+
+	user, err := h.server.GetUser(h.ctx, u.Email)
+	if err != nil {
+		http.Error(w, fmt.Errorf("error getting userL %w", err).Error(), http.StatusInternalServerError)
+		return
+	}
+
+	patchUserRequest(user, u)
+
+	updatedUser, err := h.server.UpdateUser(h.ctx, user)
+	if err != nil {
+		http.Error(w, fmt.Errorf("error updating user: %w", err).Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response := toUserResponse(updatedUser)
+	json.Write(w, http.StatusOK, response)
+
+}
+func patchUserRequest(user *storer.User, u UserRequest) {
+	if u.Name != "" {
+		user.Name = u.Name
+	}
+	if u.Email != "" {
+		user.Email = u.Email
+	}
+	if u.Password != "" {
+		hashed, err := util.HassPassword(u.Password)
+		if err != nil {
+			panic(err)
+		}
+		user.Password = hashed
+	}
+	if u.IsAdmin {
+		user.IsAdmin = u.IsAdmin
+	}
+	user.UpdatedAt = toTimePtr(time.Now())
+}
+
+func (h *handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	i, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		http.Error(w, fmt.Errorf("error parsing ID: %w", err).Error(), http.StatusBadRequest)
+		return
+	}
+
+	err = h.server.DeleteUser(h.ctx, i)
+	if err != nil {
+		http.Error(w, fmt.Errorf("error deleting user: %w", err).Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *handler) loginUser(w http.ResponseWriter, r *http.Request) {
+	var u LoginUserRequest
+	if err := json.Read(r, &u); err != nil {
+		http.Error(w, fmt.Errorf("error decoding request body at LoginUser: %w", err).Error(), http.StatusBadRequest)
+		return
+	}
+
+	gu, err := h.server.GetUser(h.ctx, u.Email)
+	if err != nil {
+		http.Error(w, fmt.Errorf("error geting user: %w", err).Error(), http.StatusInternalServerError)
+		return
+	}
+
+	err = util.CheckPassword(u.Password, gu.Password)
+	if err != nil {
+		http.Error(w, fmt.Errorf("wrong password: %w", err).Error(), http.StatusUnauthorized)
+		return
+	}
+
+	// create a json web token and return it as reponse
+	accessToken, accessClaims, err := h.tokenMaker.CreateToken(gu.ID, gu.Email, gu.IsAdmin, 15*time.Minute)
+	if err != nil {
+		http.Error(w, fmt.Errorf("error creating token: %w", err).Error(), http.StatusInternalServerError)
+		return
+	}
+
+	refreshToken, refreshClaims, err := h.tokenMaker.CreateToken(gu.ID, gu.Email, gu.IsAdmin, 15*time.Minute)
+	if err != nil {
+		http.Error(w, fmt.Errorf("error creating token: %w", err).Error(), http.StatusInternalServerError)
+		return
+	}
+
+	session, err := h.server.CreateSession(h.ctx, &storer.Session{
+		ID:           refreshClaims.RegisteredClaims.ID,
+		UserEmail:    gu.Email,
+		RefreshToken: refreshToken,
+		IsRevoked:    false,
+		ExpiresAt:    refreshClaims.RegisteredClaims.ExpiresAt.Time,
+	})
+	if err != nil {
+		http.Error(w, fmt.Errorf("error creating session: %w", err).Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response := LoginUserResponse{
+		SessionID:             session.ID,
+		AccessToken:           accessToken,
+		RefreshToken:          refreshToken,
+		AccessTokenExpiresAt:  accessClaims.RegisteredClaims.ExpiresAt.Time,
+		RefreshTokenExpiresAt: refreshClaims.RegisteredClaims.ExpiresAt.Time,
+		User:                  toUserResponse(gu),
+	}
+
+	json.Write(w, http.StatusOK, response)
+}
+
+func (h *handler) logoutUser(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		http.Error(w, fmt.Errorf("missing session ID:").Error(), http.StatusBadRequest)
+		return
+	}
+
+	err := h.server.DeleteSession(h.ctx, id)
+	if err != nil {
+		http.Error(w, fmt.Errorf("error deleting session: %w", err).Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *handler) renewAccessToken(w http.ResponseWriter, r *http.Request) {
+	var request RenewAccesTokenRequest
+	if err := json.Read(r, &request); err != nil {
+		http.Error(w, fmt.Errorf("error decoding request body at renew access token: %w", err).Error(), http.StatusBadRequest)
+		return
+	}
+
+	refreshClaims, err := h.tokenMaker.VerifyToken(request.RefreshToken)
+	if err != nil {
+		http.Error(w, fmt.Errorf("error verifying token: %w", err).Error(), http.StatusUnauthorized)
+		return
+	}
+
+	session, err := h.server.GetSession(h.ctx, refreshClaims.RegisteredClaims.ID)
+	if err != nil {
+		http.Error(w, fmt.Errorf("error gettoing session: %w", err).Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if session.IsRevoked {
+		http.Error(w, fmt.Errorf("session is revoked").Error(), http.StatusUnauthorized)
+		return
+	}
+
+	if session.UserEmail != refreshClaims.Email {
+		http.Error(w, fmt.Errorf("invalid session").Error(), http.StatusUnauthorized)
+		return
+	}
+
+	accessToken, accessClaims, err := h.tokenMaker.CreateToken(refreshClaims.ID, refreshClaims.Email, refreshClaims.IsAdmin, 24*time.Hour)
+	if err != nil {
+		http.Error(w, fmt.Errorf("error creating token: %w", err).Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response := RenewAccessTokenResponse{
+		AccessToken:          accessToken,
+		AccessTokenExpiresAt: accessClaims.RegisteredClaims.ExpiresAt.Time,
+	}
+
+	json.Write(w, http.StatusOK, response)
+
+}
+
+func (h *handler) revokeSession(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		http.Error(w, fmt.Errorf("missing session id").Error(), http.StatusBadRequest)
+		return
+	}
+
+	err := h.server.RevokeSession(h.ctx, id)
+	if err != nil {
+		http.Error(w, fmt.Errorf("error revoking session: %w", err).Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

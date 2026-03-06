@@ -222,3 +222,95 @@ func (ps *PostgresStorer) execTx(ctx context.Context, fn func(*sqlx.Tx) error) e
 
 	return nil
 }
+
+func (ps *PostgresStorer) CreateUser(ctx context.Context, u *User) (*User, error) {
+	_, err := ps.db.NamedExecContext(ctx, "INSERT INTO users (name, email, password, is_admin) VALUES (:name, :email, :password, :is_admin)", u)
+	if err != nil {
+		return nil, fmt.Errorf("error inserting user: %w", err)
+	}
+
+	var id int
+	err = ps.db.GetContext(ctx, &id, "SELECT id FROM users WHERE name=$1 AND email=$2 AND password=$3 AND is_admin=$4", u.Name, u.Email, u.Password, u.IsAdmin)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve created user: %w", err)
+	}
+
+	u.ID = int64(id)
+
+	return u, nil
+}
+
+func (ps *PostgresStorer) GetUser(ctx context.Context, email string) (*User, error) {
+	var u User
+	err := ps.db.GetContext(ctx, &u, "SELECT * FROM users WHERE email=$1", email)
+	if err != nil {
+		return nil, fmt.Errorf("error getting user: %w", err)
+	}
+
+	return &u, nil
+}
+
+func (ps *PostgresStorer) GetAllUsers(ctx context.Context) ([]User, error) {
+	var users []User
+	err := ps.db.SelectContext(ctx, &users, "SELECT * FROM users")
+	if err != nil {
+		return nil, fmt.Errorf("error Getting all users: %w", err)
+	}
+
+	return users, nil
+}
+
+func (ps *PostgresStorer) UpdateUser(ctx context.Context, u *User) (*User, error) {
+	_, err := ps.db.NamedExecContext(ctx, "UPDATE users SET name=:name, email=:email, password=:password,is_admin=:is_admin, updated_at=:updated_at WHERE id=:id", u)
+	if err != nil {
+		return nil, fmt.Errorf("error updating user: %w", err)
+	}
+
+	return u, nil
+}
+
+func (ps *PostgresStorer) DeleteUser(ctx context.Context, id int64) error {
+	_, err := ps.db.ExecContext(ctx, "DELETE FROM users WHERE id=$1", id)
+	if err != nil {
+		return fmt.Errorf("error deleting user: %w", err)
+	}
+
+	return nil
+}
+
+func (ps *PostgresStorer) CreateSession(ctx context.Context, s *Session) (*Session, error) {
+	_, err := ps.db.NamedExecContext(ctx, "INSERT INTO sessions (id, user_email, refresh_token, is_revoked, expires_at) VALUES (:id, :user_email, :refresh_token, :is_revoked, :expires_at)", s)
+	if err != nil {
+		return nil, fmt.Errorf("error inserting session: %w", err)
+	}
+
+	return s, nil
+}
+
+func (ps *PostgresStorer) GetSession(ctx context.Context, id string) (*Session, error) {
+	var s Session
+	err := ps.db.GetContext(ctx, &s, "SELECT * FROM sessions WHERE id=$1", id)
+	if err != nil {
+		return nil, fmt.Errorf("error getting session: %w", err)
+	}
+
+	return &s, nil
+}
+
+func (ps *PostgresStorer) RevokeSession(ctx context.Context, id string) error {
+	_, err := ps.db.NamedExecContext(ctx, "UPDATE sessions SET is_revoked=true WHERE id=:id", map[string]interface{}{"id": id})
+	if err != nil {
+		return fmt.Errorf("error revoking user: %w", err)
+	}
+
+	return nil
+}
+
+func (ps *PostgresStorer) DeleteSession(ctx context.Context, id string) error {
+	_, err := ps.db.ExecContext(ctx, "DELETE FROM sessions WHERE id=$1", id)
+	if err != nil {
+		return fmt.Errorf("error deleting session: %w", err)
+	}
+
+	return nil
+}
