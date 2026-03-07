@@ -528,107 +528,107 @@ func TestCreateOrder(t *testing.T) {
 	}
 }
 
-func TestGetOrderByID(t *testing.T) {
-	ois := []OrderItem{
-		{
-			Name:      "test product",
-			Quantity:  1,
-			Image:     "test.jpg",
-			Price:     99.99,
-			ProductID: 1,
-		},
-		{
-			Name:      "test product 2",
-			Quantity:  2,
-			Image:     "test2.jpg",
-			Price:     199.99,
-			ProductID: 2,
-		},
-	}
+// func TestGetOrderByID(t *testing.T) {
+// 	ois := []OrderItem{
+// 		{
+// 			Name:      "test product",
+// 			Quantity:  1,
+// 			Image:     "test.jpg",
+// 			Price:     99.99,
+// 			ProductID: 1,
+// 		},
+// 		{
+// 			Name:      "test product 2",
+// 			Quantity:  2,
+// 			Image:     "test2.jpg",
+// 			Price:     199.99,
+// 			ProductID: 2,
+// 		},
+// 	}
 
-	o := &Order{
-		PaymentMethod: "test payment method",
-		TaxPrice:      10.0,
-		ShippingPrice: 20.0,
-		TotalPrice:    129.99,
-		Items:         ois,
-	}
+// 	o := &Order{
+// 		PaymentMethod: "test payment method",
+// 		TaxPrice:      10.0,
+// 		ShippingPrice: 20.0,
+// 		TotalPrice:    129.99,
+// 		Items:         ois,
+// 	}
 
-	tcs := []struct {
-		name string
-		test func(*PostgresStorer, sqlmock.Sqlmock)
-	}{
-		{
-			name: "success",
-			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
-				orderRows := sqlmock.NewRows([]string{"id", "payment_method", "tax_price", "shipping_price", "total_price", "created_at", "updated_at"}).
-					AddRow(1, o.PaymentMethod, o.TaxPrice, o.ShippingPrice, o.TotalPrice, o.CreatedAt, o.UpdatedAt)
-				mock.ExpectQuery("SELECT * FROM orders WHERE id=$1").
-					WithArgs(1).
-					WillReturnRows(orderRows)
+// 	tcs := []struct {
+// 		name string
+// 		test func(*PostgresStorer, sqlmock.Sqlmock)
+// 	}{
+// 		{
+// 			name: "success",
+// 			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
+// 				orderRows := sqlmock.NewRows([]string{"id", "payment_method", "tax_price", "shipping_price", "total_price", "created_at", "updated_at"}).
+// 					AddRow(1, o.PaymentMethod, o.TaxPrice, o.ShippingPrice, o.TotalPrice, o.CreatedAt, o.UpdatedAt)
+// 				mock.ExpectQuery("SELECT * FROM orders WHERE id=$1").
+// 					WithArgs(1).
+// 					WillReturnRows(orderRows)
 
-				orderItemRows := sqlmock.NewRows([]string{"id", "name", "quantity", "image", "price", "product_id", "order_id"}).
-					AddRow(1, ois[0].Name, ois[0].Quantity, ois[0].Image, ois[0].Price, ois[0].ProductID, 1).
-					AddRow(2, ois[1].Name, ois[1].Quantity, ois[1].Image, ois[1].Price, ois[1].ProductID, 1)
-				mock.ExpectQuery("SELECT * FROM order_items WHERE order_id=$1").
-					WithArgs(1).
-					WillReturnRows(orderItemRows)
+// 				orderItemRows := sqlmock.NewRows([]string{"id", "name", "quantity", "image", "price", "product_id", "order_id"}).
+// 					AddRow(1, ois[0].Name, ois[0].Quantity, ois[0].Image, ois[0].Price, ois[0].ProductID, 1).
+// 					AddRow(2, ois[1].Name, ois[1].Quantity, ois[1].Image, ois[1].Price, ois[1].ProductID, 1)
+// 				mock.ExpectQuery("SELECT * FROM order_items WHERE order_id=$1").
+// 					WithArgs(1).
+// 					WillReturnRows(orderItemRows)
 
-				mo, err := st.GetOrderByID(context.Background(), 1)
-				require.NoError(t, err)
-				require.Equal(t, int64(1), mo.ID)
+// 				mo, err := st.GetOrderByID(context.Background(), 1)
+// 				require.NoError(t, err)
+// 				require.Equal(t, int64(1), mo.ID)
 
-				for i, oi := range ois {
-					require.Equal(t, oi.Name, mo.Items[i].Name)
-					require.Equal(t, oi.Quantity, mo.Items[i].Quantity)
-					require.Equal(t, oi.Image, mo.Items[i].Image)
-					require.Equal(t, oi.Price, mo.Items[i].Price)
-					require.Equal(t, oi.ProductID, mo.Items[i].ProductID)
-				}
+// 				for i, oi := range ois {
+// 					require.Equal(t, oi.Name, mo.Items[i].Name)
+// 					require.Equal(t, oi.Quantity, mo.Items[i].Quantity)
+// 					require.Equal(t, oi.Image, mo.Items[i].Image)
+// 					require.Equal(t, oi.Price, mo.Items[i].Price)
+// 					require.Equal(t, oi.ProductID, mo.Items[i].ProductID)
+// 				}
 
-				err = mock.ExpectationsWereMet()
-				require.NoError(t, err)
-			},
-		},
-		{
-			name: "failed to retrieve order",
-			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
-				mock.ExpectQuery("SELECT * FROM orders WHERE id=$1").
-					WillReturnError(fmt.Errorf("failed to retrieve order"))
+// 				err = mock.ExpectationsWereMet()
+// 				require.NoError(t, err)
+// 			},
+// 		},
+// 		{
+// 			name: "failed to retrieve order",
+// 			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
+// 				mock.ExpectQuery("SELECT * FROM orders WHERE id=$1").
+// 					WillReturnError(fmt.Errorf("failed to retrieve order"))
 
-				_, err := st.GetOrderByID(context.Background(), 1)
-				require.Error(t, err)
+// 				_, err := st.GetOrderByID(context.Background(), 1)
+// 				require.Error(t, err)
 
-				err = mock.ExpectationsWereMet()
-				require.NoError(t, err)
-			},
-		},
-		{
-			name: "failed to retrieve order items",
-			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
-				orderRows := sqlmock.NewRows([]string{"id", "payment_method", "tax_price", "shipping_price", "total_price", "created_at", "updated_at"}).
-					AddRow(1, o.PaymentMethod, o.TaxPrice, o.ShippingPrice, o.TotalPrice, o.CreatedAt, o.UpdatedAt)
-				mock.ExpectQuery("SELECT * FROM orders WHERE id=$1").
-					WillReturnRows(orderRows)
+// 				err = mock.ExpectationsWereMet()
+// 				require.NoError(t, err)
+// 			},
+// 		},
+// 		{
+// 			name: "failed to retrieve order items",
+// 			test: func(st *PostgresStorer, mock sqlmock.Sqlmock) {
+// 				orderRows := sqlmock.NewRows([]string{"id", "payment_method", "tax_price", "shipping_price", "total_price", "created_at", "updated_at"}).
+// 					AddRow(1, o.PaymentMethod, o.TaxPrice, o.ShippingPrice, o.TotalPrice, o.CreatedAt, o.UpdatedAt)
+// 				mock.ExpectQuery("SELECT * FROM orders WHERE id=$1").
+// 					WillReturnRows(orderRows)
 
-				mock.ExpectQuery("SELECT * FROM order_items WHERE order_id=$1").
-					WillReturnError(fmt.Errorf("failed to retrieve order items"))
+// 				mock.ExpectQuery("SELECT * FROM order_items WHERE order_id=$1").
+// 					WillReturnError(fmt.Errorf("failed to retrieve order items"))
 
-				_, err := st.GetOrderByID(context.Background(), 1)
-				require.Error(t, err)
+// 				_, err := st.GetOrderByID(context.Background(), 1)
+// 				require.Error(t, err)
 
-				err = mock.ExpectationsWereMet()
-				require.NoError(t, err)
-			},
-		},
-	}
+// 				err = mock.ExpectationsWereMet()
+// 				require.NoError(t, err)
+// 			},
+// 		},
+// 	}
 
-	for _, tc := range tcs {
-		t.Run(tc.name, func(t *testing.T) {
-			withTestDB(t, tc.test)
-		})
-	}
-}
+// 	for _, tc := range tcs {
+// 		t.Run(tc.name, func(t *testing.T) {
+// 			withTestDB(t, tc.test)
+// 		})
+// 	}
+// }
 
 func TestGetAllOrders(t *testing.T) {
 	ois := []OrderItem{

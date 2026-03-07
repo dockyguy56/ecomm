@@ -38,8 +38,8 @@ func (s *Server) CreateOrder(ctx context.Context, order *storer.Order) (*storer.
 	return s.storer.CreateOrder(ctx, order)
 }
 
-func (s *Server) GetOrderByID(ctx context.Context, id int64) (*storer.Order, error) {
-	return s.storer.GetOrderByID(ctx, id)
+func (s *Server) GetAllOrdersByID(ctx context.Context, userId int64) (*[]storer.Order, error) {
+	return s.storer.GetAllOrdersByID(ctx, userId)
 }
 
 func (s *Server) GetAllOrders(ctx context.Context) ([]*storer.Order, error) {

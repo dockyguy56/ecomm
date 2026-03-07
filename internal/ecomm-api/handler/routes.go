@@ -10,58 +10,67 @@ var r *chi.Mux
 
 func RegisterRoutes(h *handler) *chi.Mux {
 	r = chi.NewRouter()
+	tokenMaker := h.TokenMaker
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("all good"))
 	})
 
 	r.Route("/products", func(r chi.Router) {
-		r.Post("/", h.CreateProduct)
+		r.With(GetAdminMiddlewareFnuc(tokenMaker)).Post("/", h.CreateProduct)
 		r.Get("/", h.GetAllProducts)
 
 		r.Route("/{id}", func(r chi.Router) {
 			r.Get("/", h.GetProductByID)
-			r.Patch("/", h.UpdateProduct)
-			r.Delete("/", h.DeleteProduct)
+			r.Group(func(r chi.Router) {
+				r.Use(GetAdminMiddlewareFnuc(tokenMaker))
+				r.Patch("/", h.UpdateProduct)
+				r.Delete("/", h.DeleteProduct)
+			})
 		})
 	})
 
-	r.Route("/orders", func(r chi.Router) {
-		r.Post("/", h.CreateOrder)
-		r.Get("/", h.GetAllOrders)
+	r.Group(func(r chi.Router) {
+		r.Use(GetAuthMiddlewareFnuc(tokenMaker))
 
-		r.Route("/{id}", func(r chi.Router) {
-			r.Get("/", h.GetOrderByID)
-			r.Delete("/", h.DeleteOrder)
+		r.Get("/myorders", h.GetAllOrdersByID)
+		r.Route("/orders", func(r chi.Router) {
+			r.Post("/", h.CreateOrder)
+			r.With(GetAdminMiddlewareFnuc(tokenMaker)).Get("/", h.GetAllOrders)
+
+			r.Route("/{id}", func(r chi.Router) {
+				r.Delete("/", h.DeleteOrder)
+			})
 		})
 	})
 
 	r.Route("/users", func(r chi.Router) {
 		r.Post("/", h.CreateUser)
-		r.Get("/", h.GetAllUsers)
-		r.Patch("/", h.updateUser)
+		r.Post("/login", h.loginUser)
 
-		r.Route("/{id}", func(r chi.Router) {
-			r.Delete("/", h.DeleteUser)
+		r.Group(func(r chi.Router) {
+			r.Use(GetAdminMiddlewareFnuc(tokenMaker))
+			r.Get("/", h.GetAllUsers)
+
+			r.Route("/{id}", func(r chi.Router) {
+				r.Delete("/", h.DeleteUser)
+			})
+
 		})
 
-		r.Route("/login", func(r chi.Router) {
-			r.Post("/", h.loginUser)
-		})
-
-		r.Route("/logout", func(r chi.Router) {
-			r.Post("/", h.logoutUser)
+		r.Group(func(r chi.Router) {
+			r.Use(GetAuthMiddlewareFnuc(tokenMaker))
+			r.Patch("/", h.updateUser)
+			r.Post("/logout", h.logoutUser)
 		})
 
 	})
 
-	r.Route("/tokens", func(r chi.Router) {
-		r.Route("/renew", func(r chi.Router) {
-			r.Post("/", h.renewAccessToken)
-		})
-
-		r.Route("/revoke/{id}", func(r chi.Router) {
-			r.Post("/", h.revokeSession)
+	r.Group(func(r chi.Router) {
+		r.Use(GetAuthMiddlewareFnuc(tokenMaker))
+		r.Route("/tokens", func(r chi.Router) {
+			r.Post("/renew", h.renewAccessToken)
+			r.Post("/revoke", h.revokeSession)
 		})
 	})
 

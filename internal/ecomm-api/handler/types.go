@@ -54,6 +54,10 @@ type OrderResponse struct {
 	UpdatedAt     *time.Time  `json:"updated_at,omitempty"`
 }
 
+type ListOrderResponse struct {
+	Orders []OrderResponse `json:"orders"`
+}
+
 type UserRequest struct {
 	Name     string `json:"name"`
 	Email    string `json:"email"`
@@ -67,7 +71,7 @@ type UserResponse struct {
 	IsAdmin bool   `json:"is_admin"`
 }
 
-type ListUserRespose struct {
+type ListUserResponse struct {
 	Users []UserResponse `json:"users"`
 }
 

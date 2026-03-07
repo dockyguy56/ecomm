@@ -18,14 +18,14 @@ import (
 type handler struct {
 	ctx        context.Context
 	server     *server.Server
-	tokenMaker *token.JWTMaker
+	TokenMaker *token.JWTMaker
 }
 
 func NewHandler(ctx context.Context, server *server.Server, secretKey string) *handler {
 	return &handler{
 		ctx:        ctx,
 		server:     server,
-		tokenMaker: token.NewJWTMaker(secretKey),
+		TokenMaker: token.NewJWTMaker(secretKey),
 	}
 }
 
@@ -33,7 +33,7 @@ func (h *handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	var p ProductRequest
 
 	if err := json.Read(r, &p); err != nil {
-		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Invalid request payload: %w", err), http.StatusBadRequest)
 		return
 	}
 
@@ -207,7 +207,11 @@ func (h *handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	claims := r.Context().Value(authKey{}).(*token.UserClaims)
+
 	order := toStorerOrder(req)
+	order.UserID = claims.ID
+
 	created, err := h.server.CreateOrder(h.ctx, order)
 	if err != nil {
 		http.Error(w, fmt.Errorf("Failed to create order: %w", err).Error(), http.StatusInternalServerError)
@@ -219,23 +223,21 @@ func (h *handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	json.Write(w, http.StatusCreated, response)
 }
 
-func (h *handler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	i, err := strconv.ParseInt(id, 10, 64)
+func (h *handler) GetAllOrdersByID(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(authKey{}).(*token.UserClaims)
+
+	orders, err := h.server.GetAllOrdersByID(h.ctx, claims.ID)
 	if err != nil {
-		http.Error(w, fmt.Errorf("Invalid order ID: %w", err).Error(), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Order not found : %w", err), http.StatusNotFound)
 		return
 	}
 
-	order, err := h.server.GetOrderByID(h.ctx, i)
-	if err != nil {
-		http.Error(w, "Order not found", http.StatusNotFound)
-		return
+	var ordersReponse ListOrderResponse
+	for _, o := range *orders {
+		ordersReponse.Orders = append(ordersReponse.Orders, toOrderResponse(&o))
 	}
 
-	response := toOrderResponse(order)
-
-	json.Write(w, http.StatusOK, response)
+	json.Write(w, http.StatusOK, ordersReponse)
 }
 
 func (h *handler) GetAllOrders(w http.ResponseWriter, r *http.Request) {
@@ -372,7 +374,7 @@ func (h *handler) GetAllUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var response ListUserRespose
+	var response ListUserResponse
 	for _, u := range users {
 		response.Users = append(response.Users, toUserResponse(&u))
 	}
@@ -387,13 +389,18 @@ func (h *handler) updateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.server.GetUser(h.ctx, u.Email)
+	claims := r.Context().Value(authKey{}).(*token.UserClaims)
+
+	user, err := h.server.GetUser(h.ctx, claims.Email)
 	if err != nil {
 		http.Error(w, fmt.Errorf("error getting userL %w", err).Error(), http.StatusInternalServerError)
 		return
 	}
 
 	patchUserRequest(user, u)
+	if user.Email != "" {
+		user.Email = claims.Email
+	}
 
 	updatedUser, err := h.server.UpdateUser(h.ctx, user)
 	if err != nil {
@@ -463,13 +470,13 @@ func (h *handler) loginUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// create a json web token and return it as reponse
-	accessToken, accessClaims, err := h.tokenMaker.CreateToken(gu.ID, gu.Email, gu.IsAdmin, 15*time.Minute)
+	accessToken, accessClaims, err := h.TokenMaker.CreateToken(gu.ID, gu.Email, gu.IsAdmin, 15*time.Minute)
 	if err != nil {
 		http.Error(w, fmt.Errorf("error creating token: %w", err).Error(), http.StatusInternalServerError)
 		return
 	}
 
-	refreshToken, refreshClaims, err := h.tokenMaker.CreateToken(gu.ID, gu.Email, gu.IsAdmin, 15*time.Minute)
+	refreshToken, refreshClaims, err := h.TokenMaker.CreateToken(gu.ID, gu.Email, gu.IsAdmin, 15*time.Minute)
 	if err != nil {
 		http.Error(w, fmt.Errorf("error creating token: %w", err).Error(), http.StatusInternalServerError)
 		return
@@ -500,13 +507,9 @@ func (h *handler) loginUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) logoutUser(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if id == "" {
-		http.Error(w, fmt.Errorf("missing session ID:").Error(), http.StatusBadRequest)
-		return
-	}
+	claims := r.Context().Value(authKey{}).(*token.UserClaims)
 
-	err := h.server.DeleteSession(h.ctx, id)
+	err := h.server.DeleteSession(h.ctx, claims.RegisteredClaims.ID)
 	if err != nil {
 		http.Error(w, fmt.Errorf("error deleting session: %w", err).Error(), http.StatusInternalServerError)
 		return
@@ -522,7 +525,7 @@ func (h *handler) renewAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refreshClaims, err := h.tokenMaker.VerifyToken(request.RefreshToken)
+	refreshClaims, err := h.TokenMaker.VerifyToken(request.RefreshToken)
 	if err != nil {
 		http.Error(w, fmt.Errorf("error verifying token: %w", err).Error(), http.StatusUnauthorized)
 		return
@@ -544,7 +547,7 @@ func (h *handler) renewAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, accessClaims, err := h.tokenMaker.CreateToken(refreshClaims.ID, refreshClaims.Email, refreshClaims.IsAdmin, 24*time.Hour)
+	accessToken, accessClaims, err := h.TokenMaker.CreateToken(refreshClaims.ID, refreshClaims.Email, refreshClaims.IsAdmin, 24*time.Hour)
 	if err != nil {
 		http.Error(w, fmt.Errorf("error creating token: %w", err).Error(), http.StatusInternalServerError)
 		return
@@ -560,13 +563,9 @@ func (h *handler) renewAccessToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) revokeSession(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if id == "" {
-		http.Error(w, fmt.Errorf("missing session id").Error(), http.StatusBadRequest)
-		return
-	}
+	claims := r.Context().Value(authKey{}).(*token.UserClaims)
 
-	err := h.server.RevokeSession(h.ctx, id)
+	err := h.server.RevokeSession(h.ctx, claims.RegisteredClaims.ID)
 	if err != nil {
 		http.Error(w, fmt.Errorf("error revoking session: %w", err).Error(), http.StatusInternalServerError)
 		return
