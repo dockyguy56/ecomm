@@ -28,7 +28,8 @@ func (ps *PostgresStorer) CreateProduct(ctx context.Context, product *Product) (
 	// Get the ID of the newly created product
 	var id int
 
-	err = ps.db.GetContext(ctx, &id, "SELECT id FROM products WHERE name=$1 AND image=$2 AND category=$3 AND description=$4 AND rating=$5 AND num_reviews=$6 AND price=$7 AND count_in_stock=$8", product.Name, product.Image, product.Category, product.Description, product.Rating, product.NumReviews, product.Price, product.CountInStock)
+	err = ps.db.GetContext(ctx, &id, "SELECT id FROM products WHERE name=$1 AND image=$2 AND category=$3 AND description=$4 AND rating=$5 AND num_reviews=$6", product.Name, product.Image, product.Category, product.Description, product.Rating, product.NumReviews)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve created product: %w", err)
 	}
@@ -50,14 +51,16 @@ func (ps *PostgresStorer) GetProductByID(ctx context.Context, id int64) (*Produc
 	return &product, nil
 }
 
-func (ps *PostgresStorer) GetAllProducts(ctx context.Context) ([]Product, error) {
+func (ps *PostgresStorer) GetAllProducts(ctx context.Context) ([]*Product, error) {
 	// Implement the logic to retrieve all products from the database.
-	var products []Product
+	var products []*Product
 
 	err := ps.db.SelectContext(ctx, &products, "SELECT * FROM products")
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve all products: %w", err)
 	}
+
+	fmt.Printf("storer: here is the id of the first product %d , name: %s", products[0].ID, products[0].Name)
 
 	return products, nil
 }
@@ -118,7 +121,7 @@ func createOrder(ctx context.Context, tx *sqlx.Tx, order *Order) (*Order, error)
 
 	var id int
 
-	err = tx.GetContext(ctx, &id, "SELECT id FROM orders WHERE payment_method=$1 AND tax_price=$2 AND shipping_price=$3 AND total_price=$4", order.PaymentMethod, order.TaxPrice, order.ShippingPrice, order.TotalPrice)
+	err = tx.GetContext(ctx, &id, "SELECT id FROM orders WHERE payment_method=$1 AND user_id=$2", order.PaymentMethod, order.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve created order: %w", err)
 	}
@@ -140,9 +143,9 @@ func createOrderItems(ctx context.Context, tx *sqlx.Tx, orderItem *OrderItem) er
 	return nil
 }
 
-func (ps *PostgresStorer) GetAllOrdersByID(ctx context.Context, userId int64) (*[]Order, error) {
+func (ps *PostgresStorer) GetAllOrdersByID(ctx context.Context, userId int64) ([]*Order, error) {
 	// Implement the logic to retrieve an order by its ID from the database.
-	var orders []Order
+	var orders []*Order
 	err := ps.db.SelectContext(ctx, &orders, "SELECT * FROM orders WHERE user_id=$1", userId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve order by ID: %w", err)
@@ -155,10 +158,10 @@ func (ps *PostgresStorer) GetAllOrdersByID(ctx context.Context, userId int64) (*
 			return nil, fmt.Errorf("failed to retrieve order items: %w", err)
 		}
 
-		o.Items = orderItems
+		(*o).Items = orderItems
 	}
 
-	return &orders, nil
+	return orders, nil
 }
 
 func (ps *PostgresStorer) GetAllOrders(ctx context.Context) ([]*Order, error) {
@@ -253,8 +256,8 @@ func (ps *PostgresStorer) GetUser(ctx context.Context, email string) (*User, err
 	return &u, nil
 }
 
-func (ps *PostgresStorer) GetAllUsers(ctx context.Context) ([]User, error) {
-	var users []User
+func (ps *PostgresStorer) GetAllUsers(ctx context.Context) ([]*User, error) {
+	var users []*User
 	err := ps.db.SelectContext(ctx, &users, "SELECT * FROM users")
 	if err != nil {
 		return nil, fmt.Errorf("error Getting all users: %w", err)

@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 
-	"github.com/dockyguy56/ecomm/internal/ecomm-api/storer"
+	"github.com/dockyguy56/ecomm/internal/ecomm-grpc/storer"
 )
 
 type Server struct {
@@ -22,7 +22,7 @@ func (s *Server) GetProductByID(ctx context.Context, id int64) (*storer.Product,
 	return s.storer.GetProductByID(ctx, id)
 }
 
-func (s *Server) GetAllProducts(ctx context.Context) ([]storer.Product, error) {
+func (s *Server) GetAllProducts(ctx context.Context) ([]*storer.Product, error) {
 	return s.storer.GetAllProducts(ctx)
 }
 
@@ -38,7 +38,7 @@ func (s *Server) CreateOrder(ctx context.Context, order *storer.Order) (*storer.
 	return s.storer.CreateOrder(ctx, order)
 }
 
-func (s *Server) GetAllOrdersByID(ctx context.Context, userId int64) (*[]storer.Order, error) {
+func (s *Server) GetAllOrdersByID(ctx context.Context, userId int64) ([]*storer.Order, error) {
 	return s.storer.GetAllOrdersByID(ctx, userId)
 }
 
@@ -58,7 +58,7 @@ func (s *Server) GetUser(ctx context.Context, email string) (*storer.User, error
 	return s.storer.GetUser(ctx, email)
 }
 
-func (s *Server) GetAllUsers(ctx context.Context) ([]storer.User, error) {
+func (s *Server) GetAllUsers(ctx context.Context) ([]*storer.User, error) {
 	return s.storer.GetAllUsers(ctx)
 }
 

@@ -8,23 +8,23 @@ import (
 	"time"
 
 	"github.com/dockyguy56/ecomm/internal/ecomm-api/json"
-	"github.com/dockyguy56/ecomm/internal/ecomm-api/server"
-	"github.com/dockyguy56/ecomm/internal/ecomm-api/storer"
+	"github.com/dockyguy56/ecomm/internal/ecomm-grpc/pb"
 	"github.com/dockyguy56/ecomm/internal/token"
 	"github.com/dockyguy56/ecomm/internal/util"
 	"github.com/go-chi/chi"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type handler struct {
 	ctx        context.Context
-	server     *server.Server
+	client     pb.EcommClient
 	TokenMaker *token.JWTMaker
 }
 
-func NewHandler(ctx context.Context, server *server.Server, secretKey string) *handler {
+func NewHandler(ctx context.Context, client pb.EcommClient, secretKey string) *handler {
 	return &handler{
 		ctx:        ctx,
-		server:     server,
+		client:     client,
 		TokenMaker: token.NewJWTMaker(secretKey),
 	}
 }
@@ -37,7 +37,7 @@ func (h *handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	product, err := h.server.CreateProduct(h.ctx, toStorerProduct(p))
+	product, err := h.client.CreateProduct(h.ctx, toPBProductReq(p))
 	if err != nil {
 		http.Error(w, fmt.Errorf("failed to create product: %w", err).Error(), http.StatusInternalServerError)
 		return
@@ -56,7 +56,7 @@ func (h *handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	product, err := h.server.GetProductByID(h.ctx, i)
+	product, err := h.client.GetProduct(h.ctx, &pb.ProductReq{Id: i})
 	if err != nil {
 		http.Error(w, "Product not found", http.StatusNotFound)
 		return
@@ -68,15 +68,15 @@ func (h *handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) GetAllProducts(w http.ResponseWriter, r *http.Request) {
-	products, err := h.server.GetAllProducts(h.ctx)
+	products, err := h.client.GetAllProducts(h.ctx, &pb.ProductReq{})
 	if err != nil {
 		http.Error(w, "Failed to retrieve products", http.StatusInternalServerError)
 		return
 	}
 
-	response := make([]ProductResponse, len(products))
-	for i, product := range products {
-		response[i] = toProductResponse(&product)
+	response := make([]ProductResponse, len(products.GetProducts()))
+	for i, product := range products.GetProducts() {
+		response[i] = toProductResponse(product)
 	}
 
 	json.Write(w, http.StatusOK, response)
@@ -96,14 +96,9 @@ func (h *handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	product, err := h.server.GetProductByID(h.ctx, i)
-	if err != nil {
-		http.Error(w, "Product not found", http.StatusNotFound)
-		return
-	}
+	p.ID = i
 
-	patchProductRequest(product, p)
-	updated, err := h.server.UpdateProduct(h.ctx, product)
+	updated, err := h.client.UpdateProduct(h.ctx, toPBProductReq(p))
 	if err != nil {
 		http.Error(w, "Failed to update product", http.StatusInternalServerError)
 		return
@@ -122,81 +117,13 @@ func (h *handler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.server.DeleteProduct(h.ctx, i)
+	_, err = h.client.DeleteProduct(h.ctx, &pb.ProductReq{Id: i})
 	if err != nil {
-		http.Error(w, "Product not found", http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("Product not found: %s", err), http.StatusNotFound)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func toStorerProduct(p ProductRequest) *storer.Product {
-	return &storer.Product{
-		Name:         p.Name,
-		Image:        p.Image,
-		Category:     p.Category,
-		Description:  p.Description,
-		Rating:       p.Rating,
-		NumReviews:   p.NumReviews,
-		Price:        p.Price,
-		CountInStock: p.CountInStock,
-	}
-}
-
-func toProductResponse(p *storer.Product) ProductResponse {
-	return ProductResponse{
-		ID:           p.ID,
-		Name:         p.Name,
-		Image:        p.Image,
-		Category:     p.Category,
-		Description:  p.Description,
-		Rating:       p.Rating,
-		NumReviews:   p.NumReviews,
-		Price:        p.Price,
-		CountInStock: p.CountInStock,
-		CreatedAt:    p.CreatedAt,
-		UpdatedAt:    p.UpdatedAt,
-	}
-}
-
-func patchProductRequest(p *storer.Product, req ProductRequest) {
-	if req.Name != "" {
-		p.Name = req.Name
-	}
-
-	if req.Image != "" {
-		p.Image = req.Image
-	}
-
-	if req.Category != "" {
-		p.Category = req.Category
-	}
-
-	if req.Description != "" {
-		p.Description = req.Description
-	}
-
-	if req.Rating != 0 {
-		p.Rating = req.Rating
-	}
-
-	if req.NumReviews != 0 {
-		p.NumReviews = req.NumReviews
-	}
-
-	if req.Price != 0 {
-		p.Price = req.Price
-	}
-
-	if req.CountInStock != 0 {
-		p.CountInStock = req.CountInStock
-	}
-	p.UpdatedAt = toTimePtr(time.Now())
-}
-
-func toTimePtr(t time.Time) *time.Time {
-	return &t
 }
 
 func (h *handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
@@ -209,10 +136,10 @@ func (h *handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 
 	claims := r.Context().Value(authKey{}).(*token.UserClaims)
 
-	order := toStorerOrder(req)
-	order.UserID = claims.ID
+	order := toPBOrderReq(req)
+	(*order).UserId = claims.ID
 
-	created, err := h.server.CreateOrder(h.ctx, order)
+	created, err := h.client.CreateOrder(h.ctx, order)
 	if err != nil {
 		http.Error(w, fmt.Errorf("Failed to create order: %w", err).Error(), http.StatusInternalServerError)
 		return
@@ -226,29 +153,29 @@ func (h *handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 func (h *handler) GetAllOrdersByID(w http.ResponseWriter, r *http.Request) {
 	claims := r.Context().Value(authKey{}).(*token.UserClaims)
 
-	orders, err := h.server.GetAllOrdersByID(h.ctx, claims.ID)
+	orders, err := h.client.GetAllOrders(h.ctx, &pb.OrderReq{UserId: claims.ID})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Order not found : %w", err), http.StatusNotFound)
 		return
 	}
 
 	var ordersReponse ListOrderResponse
-	for _, o := range *orders {
-		ordersReponse.Orders = append(ordersReponse.Orders, toOrderResponse(&o))
+	for _, o := range orders.GetOrders() {
+		ordersReponse.Orders = append(ordersReponse.Orders, toOrderResponse(o))
 	}
 
 	json.Write(w, http.StatusOK, ordersReponse)
 }
 
 func (h *handler) GetAllOrders(w http.ResponseWriter, r *http.Request) {
-	orders, err := h.server.GetAllOrders(h.ctx)
+	orders, err := h.client.GetAllOrders(h.ctx, &pb.OrderReq{})
 	if err != nil {
 		http.Error(w, fmt.Errorf("Failed to retrieve orders: %w", err).Error(), http.StatusInternalServerError)
 		return
 	}
 
 	var response []OrderResponse
-	for _, order := range orders {
+	for _, order := range orders.GetOrders() {
 		response = append(response, toOrderResponse(order))
 	}
 
@@ -263,64 +190,13 @@ func (h *handler) DeleteOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.server.DeleteOrder(h.ctx, i)
+	_, err = h.client.DeleteOrder(h.ctx, &pb.OrderReq{Id: i})
 	if err != nil {
 		http.Error(w, "Order not found", http.StatusNotFound)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func toStorerOrder(req OrderRequest) *storer.Order {
-	return &storer.Order{
-		PaymentMethod: req.PaymentMethod,
-		TaxPrice:      req.TaxPrice,
-		ShippingPrice: req.ShippingPrice,
-		TotalPrice:    req.TotalPrice,
-		Items:         toStorerOrderItems(req.Items),
-	}
-}
-
-func toStorerOrderItems(items []OrderItem) []storer.OrderItem {
-	var res []storer.OrderItem
-	for _, i := range items {
-		res = append(res, storer.OrderItem{
-			Name:      i.Name,
-			Quantity:  i.Quantity,
-			Image:     i.Image,
-			Price:     i.Price,
-			ProductID: i.ProductID,
-		})
-	}
-	return res
-}
-
-func toOrderResponse(o *storer.Order) OrderResponse {
-	return OrderResponse{
-		ID:            o.ID,
-		Items:         toOrderItemsResponse(o.Items),
-		PaymentMethod: o.PaymentMethod,
-		TaxPrice:      o.TaxPrice,
-		ShippingPrice: o.ShippingPrice,
-		TotalPrice:    o.TotalPrice,
-		CreatedAt:     o.CreatedAt,
-		UpdatedAt:     o.UpdatedAt,
-	}
-}
-
-func toOrderItemsResponse(items []storer.OrderItem) []OrderItem {
-	var res []OrderItem
-	for _, i := range items {
-		res = append(res, OrderItem{
-			Name:      i.Name,
-			Quantity:  i.Quantity,
-			Image:     i.Image,
-			Price:     i.Price,
-			ProductID: i.ProductID,
-		})
-	}
-	return res
 }
 
 func (h *handler) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -339,7 +215,7 @@ func (h *handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	u.Password = hashed
 
-	created, err := h.server.CreateUser(h.ctx, toStorerUser(u))
+	created, err := h.client.CreateUser(h.ctx, toPBUserReq(u))
 	if err != nil {
 		http.Error(w, fmt.Errorf("error creating user : %w", err).Error(), http.StatusInternalServerError)
 		return
@@ -350,33 +226,16 @@ func (h *handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	json.Write(w, http.StatusCreated, response)
 }
 
-func toStorerUser(u UserRequest) *storer.User {
-	return &storer.User{
-		Name:     u.Name,
-		Email:    u.Email,
-		Password: u.Password,
-		IsAdmin:  u.IsAdmin,
-	}
-}
-
-func toUserResponse(u *storer.User) UserResponse {
-	return UserResponse{
-		Name:    u.Name,
-		Email:   u.Email,
-		IsAdmin: u.IsAdmin,
-	}
-}
-
 func (h *handler) GetAllUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := h.server.GetAllUsers(h.ctx)
+	users, err := h.client.GetAllUsers(h.ctx, &pb.UserReq{})
 	if err != nil {
 		http.Error(w, fmt.Errorf("error getting all users: %w", err).Error(), http.StatusInternalServerError)
 		return
 	}
 
 	var response ListUserResponse
-	for _, u := range users {
-		response.Users = append(response.Users, toUserResponse(&u))
+	for _, u := range users.GetUsers() {
+		response.Users = append(response.Users, toUserResponse(u))
 	}
 
 	json.Write(w, http.StatusOK, response)
@@ -390,19 +249,9 @@ func (h *handler) updateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	claims := r.Context().Value(authKey{}).(*token.UserClaims)
+	u.Email = claims.Email
 
-	user, err := h.server.GetUser(h.ctx, claims.Email)
-	if err != nil {
-		http.Error(w, fmt.Errorf("error getting userL %w", err).Error(), http.StatusInternalServerError)
-		return
-	}
-
-	patchUserRequest(user, u)
-	if user.Email != "" {
-		user.Email = claims.Email
-	}
-
-	updatedUser, err := h.server.UpdateUser(h.ctx, user)
+	updatedUser, err := h.client.UpdateUser(h.ctx, toPBUserReq(u))
 	if err != nil {
 		http.Error(w, fmt.Errorf("error updating user: %w", err).Error(), http.StatusInternalServerError)
 		return
@@ -411,25 +260,6 @@ func (h *handler) updateUser(w http.ResponseWriter, r *http.Request) {
 	response := toUserResponse(updatedUser)
 	json.Write(w, http.StatusOK, response)
 
-}
-func patchUserRequest(user *storer.User, u UserRequest) {
-	if u.Name != "" {
-		user.Name = u.Name
-	}
-	if u.Email != "" {
-		user.Email = u.Email
-	}
-	if u.Password != "" {
-		hashed, err := util.HassPassword(u.Password)
-		if err != nil {
-			panic(err)
-		}
-		user.Password = hashed
-	}
-	if u.IsAdmin {
-		user.IsAdmin = u.IsAdmin
-	}
-	user.UpdatedAt = toTimePtr(time.Now())
 }
 
 func (h *handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
@@ -441,7 +271,7 @@ func (h *handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.server.DeleteUser(h.ctx, i)
+	_, err = h.client.DeleteUser(h.ctx, &pb.UserReq{Id: i})
 	if err != nil {
 		http.Error(w, fmt.Errorf("error deleting user: %w", err).Error(), http.StatusInternalServerError)
 		return
@@ -457,37 +287,37 @@ func (h *handler) loginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	gu, err := h.server.GetUser(h.ctx, u.Email)
+	gu, err := h.client.GetUser(h.ctx, &pb.UserReq{Email: u.Email})
 	if err != nil {
 		http.Error(w, fmt.Errorf("error geting user: %w", err).Error(), http.StatusInternalServerError)
 		return
 	}
 
-	err = util.CheckPassword(u.Password, gu.Password)
+	err = util.CheckPassword(u.Password, gu.GetPassword())
 	if err != nil {
 		http.Error(w, fmt.Errorf("wrong password: %w", err).Error(), http.StatusUnauthorized)
 		return
 	}
 
 	// create a json web token and return it as reponse
-	accessToken, accessClaims, err := h.TokenMaker.CreateToken(gu.ID, gu.Email, gu.IsAdmin, 15*time.Minute)
+	accessToken, accessClaims, err := h.TokenMaker.CreateToken(gu.GetId(), gu.GetEmail(), gu.GetIsAdmin(), 15*time.Minute)
 	if err != nil {
 		http.Error(w, fmt.Errorf("error creating token: %w", err).Error(), http.StatusInternalServerError)
 		return
 	}
 
-	refreshToken, refreshClaims, err := h.TokenMaker.CreateToken(gu.ID, gu.Email, gu.IsAdmin, 15*time.Minute)
+	refreshToken, refreshClaims, err := h.TokenMaker.CreateToken(gu.GetId(), gu.GetEmail(), gu.GetIsAdmin(), 15*time.Minute)
 	if err != nil {
 		http.Error(w, fmt.Errorf("error creating token: %w", err).Error(), http.StatusInternalServerError)
 		return
 	}
 
-	session, err := h.server.CreateSession(h.ctx, &storer.Session{
-		ID:           refreshClaims.RegisteredClaims.ID,
-		UserEmail:    gu.Email,
+	session, err := h.client.CreateSession(h.ctx, &pb.SessionReq{
+		Id:           refreshClaims.RegisteredClaims.ID,
+		UserEmail:    gu.GetEmail(),
 		RefreshToken: refreshToken,
 		IsRevoked:    false,
-		ExpiresAt:    refreshClaims.RegisteredClaims.ExpiresAt.Time,
+		ExpiresAt:    timestamppb.New(refreshClaims.RegisteredClaims.ExpiresAt.Time),
 	})
 	if err != nil {
 		http.Error(w, fmt.Errorf("error creating session: %w", err).Error(), http.StatusInternalServerError)
@@ -495,7 +325,7 @@ func (h *handler) loginUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := LoginUserResponse{
-		SessionID:             session.ID,
+		SessionID:             session.GetId(),
 		AccessToken:           accessToken,
 		RefreshToken:          refreshToken,
 		AccessTokenExpiresAt:  accessClaims.RegisteredClaims.ExpiresAt.Time,
@@ -509,7 +339,7 @@ func (h *handler) loginUser(w http.ResponseWriter, r *http.Request) {
 func (h *handler) logoutUser(w http.ResponseWriter, r *http.Request) {
 	claims := r.Context().Value(authKey{}).(*token.UserClaims)
 
-	err := h.server.DeleteSession(h.ctx, claims.RegisteredClaims.ID)
+	_, err := h.client.DeleteSession(h.ctx, &pb.SessionReq{Id: claims.RegisteredClaims.ID})
 	if err != nil {
 		http.Error(w, fmt.Errorf("error deleting session: %w", err).Error(), http.StatusInternalServerError)
 		return
@@ -531,18 +361,18 @@ func (h *handler) renewAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.server.GetSession(h.ctx, refreshClaims.RegisteredClaims.ID)
+	session, err := h.client.GetSession(h.ctx, &pb.SessionReq{Id: refreshClaims.RegisteredClaims.ID})
 	if err != nil {
 		http.Error(w, fmt.Errorf("error gettoing session: %w", err).Error(), http.StatusInternalServerError)
 		return
 	}
 
-	if session.IsRevoked {
+	if session.GetIsRevoked() {
 		http.Error(w, fmt.Errorf("session is revoked").Error(), http.StatusUnauthorized)
 		return
 	}
 
-	if session.UserEmail != refreshClaims.Email {
+	if session.GetUserEmail() != refreshClaims.Email {
 		http.Error(w, fmt.Errorf("invalid session").Error(), http.StatusUnauthorized)
 		return
 	}
@@ -565,7 +395,7 @@ func (h *handler) renewAccessToken(w http.ResponseWriter, r *http.Request) {
 func (h *handler) revokeSession(w http.ResponseWriter, r *http.Request) {
 	claims := r.Context().Value(authKey{}).(*token.UserClaims)
 
-	err := h.server.RevokeSession(h.ctx, claims.RegisteredClaims.ID)
+	_, err := h.client.RevokeSession(h.ctx, &pb.SessionReq{Id: claims.RegisteredClaims.ID})
 	if err != nil {
 		http.Error(w, fmt.Errorf("error revoking session: %w", err).Error(), http.StatusInternalServerError)
 		return
